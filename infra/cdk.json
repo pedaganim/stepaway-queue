@@ -1,5 +1,5 @@
 {
-  "app": "node --loader ts-node/esm bin/stepaway-infra.ts",
+  "app": "node dist/bin/stepaway-infra.js",
   "context": {
     "@aws-cdk/core:stackRelativeExports": true
   }

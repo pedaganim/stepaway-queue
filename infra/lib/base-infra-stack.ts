@@ -61,14 +61,15 @@ export class BaseInfraStack extends Stack {
       defaultRootObject: 'index.html'
     });
 
-    // Grant CloudFront access to S3 bucket
+    // Grant CloudFront access to S3 bucket (OAC path): allow service principal with SourceArn of the distribution
+    const cfArn = `arn:aws:cloudfront::${Stack.of(this).account}:distribution/${this.distribution.distributionId}`;
     this.siteBucket.addToResourcePolicy(new iam.PolicyStatement({
       actions: ['s3:GetObject'],
       resources: [this.siteBucket.arnForObjects('*')],
       principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
       conditions: {
         StringEquals: {
-          'AWS:SourceArn': this.distribution.distributionArn
+          'AWS:SourceArn': cfArn
         }
       }
     }));

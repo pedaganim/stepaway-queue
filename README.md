@@ -65,11 +65,13 @@ Outputs will include:
 - Open the static site: `https://<SiteUrl>/` and pass the API base via query param, for example:
   - `https://<SiteUrl>/?api=${ApiUrl}`
   - Or set permanently in dev: `localStorage.setItem('STEP_API', ApiUrl)`
+ - Enqueue: `POST ${ApiUrl}/enqueue` with JSON `{ "name": "Alex", "service": "general" }`
 
 ## Development notes
 
 - DynamoDB is single-table, on-demand billing, with `PK`/`SK` attributes. The specific ticket/item schema will be added in the next iterations.
 - `services/api/src/index.ts` currently returns a placeholder response and supports `/health`. Add routes for `/enqueue`, `/next`, etc.
+  - Implemented: `POST /enqueue` to create a pending ticket in DynamoDB.
 - CORS is open for MVP; tighten for production.
 - Buckets and Cognito are set with `RemovalPolicy.DESTROY` for iteration speed. Change to `RETAIN` before production.
 

@@ -12,5 +12,10 @@
     "skipLibCheck": true
   },
   "include": ["bin/**/*.ts", "lib/**/*.ts"],
-  "exclude": ["node_modules", "cdk.out"]
+  "exclude": [
+    "node_modules",
+    "cdk.out",
+    // Exclude deprecated monolithic stack to avoid type/import conflicts
+    "lib/stepaway-infra-stack.ts"
+  ]
 }

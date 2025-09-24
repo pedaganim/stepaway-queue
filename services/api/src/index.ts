@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -10,6 +10,67 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
   if (method === 'GET' && path === '/health') {
     return json(200, { ok: true });
+  }
+
+  // Staff: get next pending ticket and mark it as "serving"
+  if (method === 'POST' && path === '/staff/next') {
+    try {
+      const tableName = process.env.TABLE_NAME as string;
+      if (!tableName) return json(500, { message: 'TABLE_NAME not configured' });
+
+      const locationId = 'default';
+      const pk = `LOC#${locationId}`;
+
+      // Query tickets for this location; filter pending; pick first
+      const q = await ddb.send(new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :tkt)'
+          ,
+        ExpressionAttributeValues: {
+          ':pk': pk,
+          ':tkt': 'TKT#',
+          ':pending': 'pending'
+        },
+        FilterExpression: '#s = :pending',
+        ExpressionAttributeNames: { '#s': 'status' },
+        Limit: 1
+      }));
+
+      const item = q.Items && q.Items[0];
+      if (!item) return json(404, { message: 'no pending tickets' });
+
+      // Update status to serving
+      await ddb.send(new UpdateCommand({
+        TableName: tableName,
+        Key: { PK: item.PK, SK: item.SK },
+        UpdateExpression: 'SET #s = :serving, updatedAt = :now',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':serving': 'serving', ':now': new Date().toISOString(), ':pending': 'pending' },
+        ConditionExpression: '#s = :pending'
+      }));
+
+      return json(200, { ticketId: item.ticketId, status: 'serving' });
+    } catch (err: any) {
+      return json(500, { message: 'failed to get next', error: err?.message || String(err) });
+    }
+  }
+
+  // Public: get ticket by id
+  const ticketMatch = path.match(/^\/tickets\/([^/]+)$/);
+  if (method === 'GET' && ticketMatch) {
+    try {
+      const tableName = process.env.TABLE_NAME as string;
+      if (!tableName) return json(500, { message: 'TABLE_NAME not configured' });
+      const ticketId = decodeURIComponent(ticketMatch[1]);
+      const locationId = 'default';
+      const pk = `LOC#${locationId}`;
+      const sk = `TKT#${ticketId}`;
+      const res = await ddb.send(new GetCommand({ TableName: tableName, Key: { PK: pk, SK: sk } }));
+      if (!res.Item) return json(404, { message: 'not found' });
+      return json(200, res.Item);
+    } catch (err: any) {
+      return json(500, { message: 'failed to get ticket', error: err?.message || String(err) });
+    }
   }
 
   if (method === 'POST' && path === '/enqueue') {
