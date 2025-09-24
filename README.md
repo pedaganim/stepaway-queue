@@ -12,7 +12,9 @@ MVP implementing:
 
 ## Monorepo layout
 
-- `infra/` — AWS CDK app and stack (`StepawayInfraStack`) provisioning DynamoDB, Lambda, HTTP API, Cognito, S3+CloudFront.
+- `infra/` — AWS CDK app with split stacks for separate deploys:
+  - `Stepaway-BaseInfra` (DynamoDB, Cognito, S3+CloudFront)
+  - `Stepaway-Api` (Lambda + HTTP API)
 - `services/api/` — Lambda handler (TypeScript) with a basic router and `/health` check.
 - `web/` — Static landing page placeholder. Discover API via `?api=...` URL param or `localStorage.STEP_API`.
 
@@ -36,11 +38,19 @@ npm install --workspaces
 npm -w infra run cdk:bootstrap
 ```
 
-3) Synthesize and deploy all stacks:
+3) Synthesize and deploy stacks separately:
 
 ```
-npm -w infra run cdk:synth
-npm -w infra run cdk:deploy
+# Build TS -> JS (required since CDK runs compiled output)
+npm -w infra run build
+
+# Synth either stack
+npm -w infra run cdk:synth:base
+npm -w infra run cdk:synth:api
+
+# Deploy separately (BaseInfra first, then Api)
+npm -w infra run cdk:deploy:base
+npm -w infra run cdk:deploy:api
 ```
 
 Outputs will include:
@@ -66,9 +76,47 @@ Outputs will include:
 ## Useful commands
 
 - Build infra: `npm -w infra run build`
-- CDK synth: `npm -w infra run cdk:synth`
-- CDK deploy: `npm -w infra run cdk:deploy`
+- CDK synth base: `npm -w infra run cdk:synth:base`
+- CDK synth api: `npm -w infra run cdk:synth:api`
+- CDK deploy base: `npm -w infra run cdk:deploy:base`
+- CDK deploy api: `npm -w infra run cdk:deploy:api`
 - Build API: `npm -w services/api run build`
+
+## CI/CD (GitHub Actions)
+
+Two workflows are included:
+
+- `.github/workflows/deploy-base.yml` — builds and deploys `Stepaway-BaseInfra` when `infra/` or `web/` changes.
+- `.github/workflows/deploy-api.yml` — builds and deploys `Stepaway-Api` when `infra/` or `services/api/` changes.
+
+Both use GitHub OIDC to assume the role `arn:aws:iam::967438331002:role/bookclub-app-role` in region `ap-southeast-2`.
+
+Ensure that IAM role trusts GitHub OIDC and allows `sts:AssumeRole` for your repository. Minimal trust policy (example):
+
+```
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Federated": "arn:aws:iam::967438331002:oidc-provider/token.actions.githubusercontent.com" },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:pedaganim/stepaway-queue:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+Attach permissions to allow CDK deploys (often AdministratorAccess in a dev account; or a least-privilege policy that covers CloudFormation, IAM, S3, CloudFront, DynamoDB, Lambda, API Gateway v2, Cognito, SSM). CDK will also require bootstrap resources in the target account/region.
+
+To run bootstrap via CI, dispatch `deploy-base.yml` once (the job will run `npx cdk deploy` which will create missing bootstrap resources if necessary) or run locally with your AWS profile.
 
 ## Next steps
 
