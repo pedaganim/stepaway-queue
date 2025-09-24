@@ -1,0 +1,14 @@
+{
+  "name": "stepaway-queue",
+  "private": true,
+  "workspaces": [
+    "infra",
+    "services/api",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm -w infra run build",
+    "deploy": "npm -w infra run cdk:deploy",
+    "synth": "npm -w infra run cdk:synth"
+  }
+}

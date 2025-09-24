@@ -1,0 +1,19 @@
+# Node
+node_modules/
+*.log
+
+# CDK
+cdk.out/
+cdk.context.json
+
+# Build artifacts
+/dist/
+/build/
+
+# OS
+.DS_Store
+
+# Web
+web/.DS_Store
+web/node_modules/
+

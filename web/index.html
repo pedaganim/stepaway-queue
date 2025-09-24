@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stepaway Queue</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 2rem; display: grid; place-items: center; min-height: 100vh; }
+      .card { max-width: 680px; width: 100%; border: 1px solid #e5e7eb22; border-radius: 12px; padding: 2rem; backdrop-filter: blur(6px); }
+      h1 { margin-top: 0; }
+      label { display: block; margin: 0.5rem 0 0.25rem; }
+      input, select, button { width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid #d1d5db88; }
+      button { cursor: pointer; background: #2563eb; color: white; border: none; margin-top: 1rem; }
+      .muted { color: #6b7280; font-size: 0.9rem; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+      .success { background: #10b98122; border: 1px solid #10b98144; color: #065f46; padding: 0.75rem; border-radius: 8px; margin-top: 1rem; display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Welcome to Stepaway</h1>
+      <p class="muted">Join the queue by entering your name and selecting a service. This is a minimal placeholder UI. API URL is discovered automatically.</p>
+
+      <div class="row">
+        <div>
+          <label for="name">Your name</label>
+          <input id="name" placeholder="Alex" />
+        </div>
+        <div>
+          <label for="service">Service</label>
+          <select id="service">
+            <option value="general">General</option>
+            <option value="billing">Billing</option>
+            <option value="support">Support</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="join">Join Queue</button>
+      <div id="msg" class="success">You're in! We'll display your ticket number here soon.</div>
+
+      <p class="muted">Health check: <span id="health">checking...</span></p>
+    </div>
+
+    <script>
+      const API_BASE = localStorage.getItem('STEP_API') || new URLSearchParams(location.search).get('api') || '';
+      async function api(path, init) {
+        if (!API_BASE) return { error: 'No API URL configured. Append ?api=https://your-api.execute-api.* to the URL.' };
+        try {
+          const res = await fetch(API_BASE.replace(/\/$/, '') + path, { ...init, headers: { 'content-type': 'application/json', ...(init && init.headers) } });
+          const json = await res.json().catch(() => ({}));
+          return { status: res.status, ok: res.ok, json };
+        } catch (e) { return { error: e && e.message ? e.message : String(e) }; }
+      }
+
+      document.getElementById('join').addEventListener('click', async () => {
+        const name = document.getElementById('name').value.trim();
+        const service = document.getElementById('service').value;
+        const msg = document.getElementById('msg');
+        if (!name) { alert('Please enter your name'); return; }
+        const res = await api('/enqueue', { method: 'POST', body: JSON.stringify({ name, service }) });
+        if (res.ok) { msg.style.display = 'block'; msg.textContent = 'Joined! Ticket pending — full flow coming soon.'; }
+        else { alert('Failed: ' + (res.json && (res.json.message || JSON.stringify(res.json))) ); }
+      });
+
+      (async () => {
+        const el = document.getElementById('health');
+        const res = await api('/health');
+        if (res && res.ok) el.textContent = 'online'; else el.textContent = 'unavailable';
+      })();
+    </script>
+  </body>
+</html>
