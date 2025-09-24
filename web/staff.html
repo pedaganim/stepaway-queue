@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stepaway Staff Console</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 2rem; }
+      .grid { display: grid; grid-template-columns: 1fr; gap: 1rem; max-width: 820px; margin: 0 auto; }
+      .card { border: 1px solid #e5e7eb22; border-radius: 12px; padding: 1rem 1.25rem; }
+      h1, h2 { margin: 0 0 0.5rem; }
+      label { display: block; margin: 0.5rem 0 0.25rem; }
+      input, button { width: 100%; padding: 0.7rem; border-radius: 8px; border: 1px solid #d1d5db88; }
+      button { cursor: pointer; background: #2563eb; color: white; border: none; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+      .muted { color: #6b7280; font-size: 0.9rem; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #11182711; padding: 0.75rem; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <div class="grid">
+      <div class="card">
+        <h1>Stepaway Staff Console</h1>
+        <p class="muted">Sign in with Cognito Hosted UI and call protected staff APIs. Configure settings below, then click "Sign In". After redirect back here, your tokens will be captured automatically.</p>
+      </div>
+
+      <div class="card">
+        <h2>Configuration</h2>
+        <div class="row">
+          <div>
+            <label for="api">API Base URL</label>
+            <input id="api" placeholder="https://xxxxx.execute-api.ap-southeast-2.amazonaws.com" />
+          </div>
+          <div>
+            <label for="region">AWS Region</label>
+            <input id="region" placeholder="ap-southeast-2" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="domain">Cognito Domain (without https)</label>
+            <input id="domain" placeholder="your-domain.auth.ap-southeast-2.amazoncognito.com" />
+          </div>
+          <div>
+            <label for="clientId">Cognito App Client ID</label>
+            <input id="clientId" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxx" />
+          </div>
+        </div>
+        <label for="redirect">Redirect URI (this page URL)</label>
+        <input id="redirect" placeholder="https://your.site.cloudfront.net/staff.html" />
+        <div class="row">
+          <button id="save">Save Settings</button>
+          <button id="signin">Sign In (Hosted UI)</button>
+        </div>
+        <p class="muted">Tip: Ensure the Redirect URI is added to your Cognito App Client Allowed Callback URLs.</p>
+      </div>
+
+      <div class="card">
+        <h2>Session</h2>
+        <div class="row">
+          <button id="logout">Sign Out</button>
+          <button id="clear">Clear Tokens</button>
+        </div>
+        <p class="muted">ID Token (JWT):</p>
+        <pre id="idtoken">(none)</pre>
+      </div>
+
+      <div class="card">
+        <h2>Actions</h2>
+        <div class="row">
+          <button id="next">Get Next Ticket</button>
+          <button id="health">API Health</button>
+        </div>
+        <pre id="out">Ready.</pre>
+      </div>
+    </div>
+
+    <script>
+      function $(id){ return document.getElementById(id); }
+      const KEY = 'STEP_STAFF_CFG_V1';
+
+      function loadCfg(){
+        try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
+      }
+      function saveCfg(cfg){ localStorage.setItem(KEY, JSON.stringify(cfg)); }
+
+      function readCfg(){
+        return {
+          api: $('api').value.trim(),
+          region: $('region').value.trim(),
+          domain: $('domain').value.trim(),
+          clientId: $('clientId').value.trim(),
+          redirect: $('redirect').value.trim() || location.origin + location.pathname
+        };
+      }
+      function writeCfg(cfg){
+        $('api').value = cfg.api || (new URLSearchParams(location.search).get('api') || '');
+        $('region').value = cfg.region || (new URLSearchParams(location.search).get('region') || 'ap-southeast-2');
+        $('domain').value = cfg.domain || (new URLSearchParams(location.search).get('domain') || '');
+        $('clientId').value = cfg.clientId || (new URLSearchParams(location.search).get('client_id') || '');
+        $('redirect').value = cfg.redirect || (new URLSearchParams(location.search).get('redirect_uri') || (location.origin + location.pathname));
+      }
+
+      function setOut(o){ $('out').textContent = typeof o === 'string' ? o : JSON.stringify(o, null, 2); }
+
+      function parseHashTokens(){
+        if (!location.hash) return null;
+        const params = new URLSearchParams(location.hash.slice(1));
+        const id_token = params.get('id_token');
+        const access_token = params.get('access_token');
+        const error = params.get('error_description') || params.get('error');
+        if (error) setOut('Auth error: ' + error);
+        if (id_token) localStorage.setItem('STEP_ID_TOKEN', id_token);
+        if (access_token) localStorage.setItem('STEP_ACCESS_TOKEN', access_token);
+        if (id_token || access_token) history.replaceState(null, '', location.pathname + location.search);
+        return { id_token, access_token };
+      }
+
+      function getIdToken(){ return localStorage.getItem('STEP_ID_TOKEN') || ''; }
+      function clearTokens(){ localStorage.removeItem('STEP_ID_TOKEN'); localStorage.removeItem('STEP_ACCESS_TOKEN'); renderSession(); }
+
+      function renderSession(){
+        const t = getIdToken();
+        if (!t) { $('idtoken').textContent = '(none)'; return; }
+        $('idtoken').textContent = t.split('.').slice(0,2).join('.') + '.…';
+      }
+
+      async function api(path, init){
+        const cfg = readCfg();
+        if (!cfg.api) return setOut('Missing API base URL');
+        const headers = { 'content-type': 'application/json', ...(init && init.headers) };
+        const token = getIdToken();
+        if (path.startsWith('/staff') && token) headers['authorization'] = 'Bearer ' + token;
+        const res = await fetch(cfg.api.replace(/\/$/, '') + path, { ...init, headers });
+        const json = await res.json().catch(() => ({}));
+        setOut({ status: res.status, ok: res.ok, json });
+      }
+
+      function buildHostedLoginUrl(){
+        const cfg = readCfg();
+        if (!cfg.domain || !cfg.clientId) { setOut('Missing domain or clientId'); return '#'; }
+        const p = new URL('https://' + cfg.domain + '/login');
+        p.searchParams.set('client_id', cfg.clientId);
+        p.searchParams.set('response_type', 'token');
+        p.searchParams.set('scope', 'openid email');
+        p.searchParams.set('redirect_uri', cfg.redirect);
+        return p.toString();
+      }
+
+      $('save').addEventListener('click', () => { saveCfg(readCfg()); setOut('Saved.'); });
+      $('signin').addEventListener('click', () => { saveCfg(readCfg()); const url = buildHostedLoginUrl(); if (url !== '#') location.href = url; });
+      $('logout').addEventListener('click', () => {
+        const cfg = readCfg();
+        if (!cfg.domain || !cfg.clientId) { clearTokens(); return; }
+        const url = new URL('https://' + cfg.domain + '/logout');
+        url.searchParams.set('client_id', cfg.clientId);
+        url.searchParams.set('logout_uri', cfg.redirect);
+        clearTokens();
+        location.href = url.toString();
+      });
+      $('clear').addEventListener('click', clearTokens);
+      $('next').addEventListener('click', () => api('/staff/next', { method: 'POST' }));
+      $('health').addEventListener('click', () => api('/health'));
+
+      // Init
+      writeCfg(loadCfg());
+      parseHashTokens();
+      renderSession();
+
+      // If API provided via site query, persist for convenience
+      const apiFromQuery = new URLSearchParams(location.search).get('api');
+      if (apiFromQuery) { const cfg = loadCfg(); cfg.api = apiFromQuery; saveCfg(cfg); writeCfg(cfg); }
+    </script>
+  </body>
+</html>
