@@ -7,8 +7,8 @@ import {
   aws_dynamodb as dynamodb,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { HttpLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
-import { HttpApi, CorsHttpMethod, HttpMethod } from '@aws-cdk/aws-apigatewayv2-alpha';
+import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { HttpApi, CorsHttpMethod, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import * as path from 'node:path';
 
 export interface ApiStackProps extends StackProps {

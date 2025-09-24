@@ -13,4 +13,3 @@ const env = {
 
 const base = new BaseInfraStack(app, 'Stepaway-BaseInfra', { env });
 const api = new ApiStack(app, 'Stepaway-Api', { env, tableName: base.table.tableName });
-api.addDependency(base);
