@@ -8,7 +8,11 @@
     "cdk:bootstrap": "cdk bootstrap",
     "cdk:synth": "cdk synth",
     "cdk:deploy": "cdk deploy --all",
-    "cdk:diff": "cdk diff"
+    "cdk:diff": "cdk diff",
+    "cdk:synth:base": "cdk synth Stepaway-BaseInfra",
+    "cdk:synth:api": "cdk synth Stepaway-Api",
+    "cdk:deploy:base": "cdk deploy Stepaway-BaseInfra",
+    "cdk:deploy:api": "cdk deploy Stepaway-Api"
   },
   "devDependencies": {
     "aws-cdk": "2.152.0",
