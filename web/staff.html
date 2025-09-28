@@ -47,6 +47,16 @@
             <input id="clientId" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxx" />
           </div>
         </div>
+        <div class="row">
+          <div>
+            <label for="biz">Business ID</label>
+            <input id="biz" placeholder="b_abcdefgh" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button id="createBiz">Create Business</button>
+          </div>
+        </div>
         <label for="redirect">Redirect URI (this page URL)</label>
         <input id="redirect" placeholder="https://your.site.cloudfront.net/staff.html" />
         <div class="row">
@@ -69,8 +79,12 @@
       <div class="card">
         <h2>Actions</h2>
         <div class="row">
-          <button id="next">Get Next Ticket</button>
+          <button id="next">Get Next Ticket (Business)</button>
           <button id="health">API Health</button>
+        </div>
+        <div class="row">
+          <button id="reset">Reset Day (Business)</button>
+          <button id="copyUrl">Copy Customer URL</button>
         </div>
         <pre id="out">Ready.</pre>
       </div>
@@ -91,7 +105,8 @@
           region: $('region').value.trim(),
           domain: $('domain').value.trim(),
           clientId: $('clientId').value.trim(),
-          redirect: $('redirect').value.trim() || location.origin + location.pathname
+          redirect: $('redirect').value.trim() || location.origin + location.pathname,
+          biz: $('biz').value.trim()
         };
       }
       function writeCfg(cfg){
@@ -100,9 +115,11 @@
         $('domain').value = cfg.domain || (new URLSearchParams(location.search).get('domain') || '');
         $('clientId').value = cfg.clientId || (new URLSearchParams(location.search).get('client_id') || '');
         $('redirect').value = cfg.redirect || (new URLSearchParams(location.search).get('redirect_uri') || (location.origin + location.pathname));
+        $('biz').value = cfg.biz || (new URLSearchParams(location.search).get('biz') || (localStorage.getItem('STEP_BIZ') || ''));
       }
 
       function setOut(o){ $('out').textContent = typeof o === 'string' ? o : JSON.stringify(o, null, 2); }
+      function setBiz(id){ const cfg = loadCfg(); cfg.biz = id; saveCfg(cfg); $('biz').value = id; localStorage.setItem('STEP_BIZ', id); }
 
       function parseHashTokens(){
         if (!location.hash) return null;
@@ -148,8 +165,15 @@
         return p.toString();
       }
 
-      $('save').addEventListener('click', () => { saveCfg(readCfg()); setOut('Saved.'); });
+      $('save').addEventListener('click', () => { const cfg = readCfg(); saveCfg(cfg); if (cfg.biz) localStorage.setItem('STEP_BIZ', cfg.biz); setOut('Saved.'); });
       $('signin').addEventListener('click', () => { saveCfg(readCfg()); const url = buildHostedLoginUrl(); if (url !== '#') location.href = url; });
+      $('createBiz').addEventListener('click', async () => {
+        saveCfg(readCfg());
+        const res = await fetch(readCfg().api.replace(/\/$/, '') + '/staff/business', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + getIdToken() }, body: JSON.stringify({ name: 'My Business', services: ['general'], avgMinutes: { general: 5 } }) });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json.businessId) { setBiz(json.businessId); setOut({ created: json }); alert('Business created: ' + json.businessId); }
+        else { setOut({ status: res.status, ok: res.ok, json }); alert('Failed to create business'); }
+      });
       $('logout').addEventListener('click', () => {
         const cfg = readCfg();
         if (!cfg.domain || !cfg.clientId) { clearTokens(); return; }
@@ -160,8 +184,18 @@
         location.href = url.toString();
       });
       $('clear').addEventListener('click', clearTokens);
-      $('next').addEventListener('click', () => api('/staff/next', { method: 'POST' }));
+      $('next').addEventListener('click', () => { const b = readCfg().biz; if (!b) return setOut('Missing business id'); api('/staff/' + encodeURIComponent(b) + '/next', { method: 'POST' }); });
+      $('reset').addEventListener('click', () => { const b = readCfg().biz; if (!b) return setOut('Missing business id'); api('/staff/' + encodeURIComponent(b) + '/reset', { method: 'POST' }); });
       $('health').addEventListener('click', () => api('/health'));
+      $('copyUrl').addEventListener('click', async () => {
+        const cfg = readCfg();
+        if (!cfg.api || !cfg.biz) { setOut('Missing API or business id'); return; }
+        const customerUrl = new URL((cfg.redirect || location.origin + '/index.html').replace(/staff\.html$/, 'index.html'));
+        customerUrl.searchParams.set('api', cfg.api);
+        customerUrl.searchParams.set('biz', cfg.biz);
+        try { await navigator.clipboard.writeText(customerUrl.toString()); alert('Copied: ' + customerUrl.toString()); }
+        catch { setOut(customerUrl.toString()); }
+      });
 
       // Init
       writeCfg(loadCfg());
@@ -169,8 +203,10 @@
       renderSession();
 
       // If API provided via site query, persist for convenience
-      const apiFromQuery = new URLSearchParams(location.search).get('api');
-      if (apiFromQuery) { const cfg = loadCfg(); cfg.api = apiFromQuery; saveCfg(cfg); writeCfg(cfg); }
+      const qs = new URLSearchParams(location.search);
+      const apiFromQuery = qs.get('api');
+      const bizFromQuery = qs.get('biz');
+      if (apiFromQuery || bizFromQuery) { const cfg = loadCfg(); if (apiFromQuery) cfg.api = apiFromQuery; if (bizFromQuery) cfg.biz = bizFromQuery; saveCfg(cfg); writeCfg(cfg); }
     </script>
   </body>
 </html>

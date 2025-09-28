@@ -46,10 +46,14 @@
 
     <script>
       const API_BASE = localStorage.getItem('STEP_API') || new URLSearchParams(location.search).get('api') || '';
-      // Persist API base from query param for convenience
-      (function persistApiFromQuery(){
-        const apiFromQuery = new URLSearchParams(location.search).get('api');
+      const BIZ_ID = localStorage.getItem('STEP_BIZ') || new URLSearchParams(location.search).get('biz') || '';
+      // Persist API base and biz id from query params for convenience
+      (function persistFromQuery(){
+        const qs = new URLSearchParams(location.search);
+        const apiFromQuery = qs.get('api');
+        const bizFromQuery = qs.get('biz');
         if (apiFromQuery) localStorage.setItem('STEP_API', apiFromQuery);
+        if (bizFromQuery) localStorage.setItem('STEP_BIZ', bizFromQuery);
       })();
       async function api(path, init) {
         if (!API_BASE) return { error: 'No API URL configured. Append ?api=https://your-api.execute-api.* to the URL.' };
@@ -65,7 +69,8 @@
         const service = document.getElementById('service').value;
         const msg = document.getElementById('msg');
         if (!name) { alert('Please enter your name'); return; }
-        const res = await api('/enqueue', { method: 'POST', body: JSON.stringify({ name, service }) });
+        if (!BIZ_ID) { alert('Missing business ID. Use a QR or URL with ?biz=<businessId>.'); return; }
+        const res = await api(`/b/${encodeURIComponent(BIZ_ID)}/enqueue`, { method: 'POST', body: JSON.stringify({ name, service }) });
         if (res.ok) {
           msg.style.display = 'block';
           const ticket = res.json && (res.json.ticketId || res.json.id);
