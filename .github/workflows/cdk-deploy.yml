@@ -1,0 +1,72 @@
+name: CDK Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      stacks:
+        description: 'Stacks to deploy (comma-separated). Leave blank to deploy all.'
+        required: false
+        default: ''
+  push:
+    branches: [ main ]
+    paths:
+      - 'infra/**'
+      - 'services/**'
+      - 'web/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Region can be configured from repo/org secret
+      CDK_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get AWS account ID
+        id: identity
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account-id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+
+      - name: Build infra
+        working-directory: infra
+        run: |
+          npm ci
+          npm run build
+
+      - name: CDK bootstrap (idempotent)
+        working-directory: infra
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ steps.identity.outputs.account-id }}
+          CDK_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: npx cdk bootstrap
+
+      - name: CDK deploy
+        working-directory: infra
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ steps.identity.outputs.account-id }}
+          CDK_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          if [ -n "${{ github.event.inputs.stacks }}" ]; then
+            IFS=',' read -ra STKS <<< "${{ github.event.inputs.stacks }}"
+            for s in "${STKS[@]}"; do npx cdk deploy "$s" --require-approval never; done
+          else
+            npx cdk deploy --all --require-approval never
+          fi
