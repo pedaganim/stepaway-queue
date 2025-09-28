@@ -16,6 +16,7 @@
       .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
       @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
       .success { background: #10b98122; border: 1px solid #10b98144; color: #065f46; padding: 0.75rem; border-radius: 8px; margin-top: 1rem; display: none; }
+      .error { background: #ef444422; border: 1px solid #ef444444; color: #7f1d1d; padding: 0.75rem; border-radius: 8px; margin-top: 1rem; display: none; }
     </style>
   </head>
   <body>
@@ -68,8 +69,20 @@
         const name = document.getElementById('name').value.trim();
         const service = document.getElementById('service').value;
         const msg = document.getElementById('msg');
-        if (!name) { alert('Please enter your name'); return; }
-        if (!BIZ_ID) { alert('Missing business ID. Use a QR or URL with ?biz=<businessId>.'); return; }
+        msg.className = 'success';
+        msg.style.display = 'none';
+        if (!name) {
+          msg.className = 'error';
+          msg.textContent = 'Please enter your name.';
+          msg.style.display = 'block';
+          return;
+        }
+        if (!BIZ_ID) {
+          msg.className = 'error';
+          msg.textContent = 'Missing business ID. Use a QR or URL with ?biz=<businessId>.';
+          msg.style.display = 'block';
+          return;
+        }
         const res = await api(`/b/${encodeURIComponent(BIZ_ID)}/enqueue`, { method: 'POST', body: JSON.stringify({ name, service }) });
         if (res.ok) {
           msg.style.display = 'block';
@@ -77,7 +90,9 @@
           msg.textContent = ticket ? `Joined! Ticket ${ticket} pending — full flow coming soon.` : 'Joined! Ticket pending — full flow coming soon.';
         } else {
           const detail = res.error || (res.json && (res.json.message || JSON.stringify(res.json))) || 'unknown error';
-          alert('Failed: ' + detail);
+          msg.className = 'error';
+          msg.textContent = 'Failed: ' + detail;
+          msg.style.display = 'block';
         }
       });
 

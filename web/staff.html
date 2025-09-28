@@ -171,8 +171,8 @@
         saveCfg(readCfg());
         const res = await fetch(readCfg().api.replace(/\/$/, '') + '/staff/business', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + getIdToken() }, body: JSON.stringify({ name: 'My Business', services: ['general'], avgMinutes: { general: 5 } }) });
         const json = await res.json().catch(() => ({}));
-        if (res.ok && json.businessId) { setBiz(json.businessId); setOut({ created: json }); alert('Business created: ' + json.businessId); }
-        else { setOut({ status: res.status, ok: res.ok, json }); alert('Failed to create business'); }
+        if (res.ok && json.businessId) { setBiz(json.businessId); setOut({ message: 'Business created', created: json }); }
+        else { setOut({ message: 'Failed to create business', status: res.status, ok: res.ok, json }); }
       });
       $('logout').addEventListener('click', () => {
         const cfg = readCfg();
@@ -193,7 +193,7 @@
         const customerUrl = new URL((cfg.redirect || location.origin + '/index.html').replace(/staff\.html$/, 'index.html'));
         customerUrl.searchParams.set('api', cfg.api);
         customerUrl.searchParams.set('biz', cfg.biz);
-        try { await navigator.clipboard.writeText(customerUrl.toString()); alert('Copied: ' + customerUrl.toString()); }
+        try { await navigator.clipboard.writeText(customerUrl.toString()); setOut({ message: 'Copied customer URL', url: customerUrl.toString() }); }
         catch { setOut(customerUrl.toString()); }
       });
 
