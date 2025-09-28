@@ -9,5 +9,10 @@ const env = {
     region: process.env.CDK_DEFAULT_REGION || 'ap-southeast-2'
 };
 const base = new BaseInfraStack(app, 'Stepaway-BaseInfra', { env });
-const api = new ApiStack(app, 'Stepaway-Api', { env, tableName: base.table.tableName });
+const api = new ApiStack(app, 'Stepaway-Api', {
+    env,
+    tableName: base.table.tableName,
+    userPool: base.userPool,
+    userPoolClient: base.userPoolClient
+});
 //# sourceMappingURL=stepaway-infra.js.map

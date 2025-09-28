@@ -1,6 +1,7 @@
 import { Stack, CfnOutput, aws_lambda as lambda, aws_lambda_nodejs as lambdaNode, aws_dynamodb as dynamodb, } from 'aws-cdk-lib';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { HttpApi, CorsHttpMethod, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as path from 'node:path';
 export class ApiStack extends Stack {
     httpApi;
@@ -26,10 +27,21 @@ export class ApiStack extends Stack {
             }
         });
         const lambdaIntegration = new HttpLambdaIntegration('LambdaIntegration', apiFn);
+        // Public routes
         this.httpApi.addRoutes({
             path: '/{proxy+}',
             methods: [HttpMethod.ANY],
             integration: lambdaIntegration
+        });
+        // Staff protected routes with Cognito User Pool authorizer
+        const authorizer = new HttpUserPoolAuthorizer('StaffAuthorizer', props.userPool, {
+            userPoolClients: [props.userPoolClient]
+        });
+        this.httpApi.addRoutes({
+            path: '/staff/{proxy+}',
+            methods: [HttpMethod.ANY],
+            integration: lambdaIntegration,
+            authorizer
         });
         new CfnOutput(this, 'ApiUrl', { value: this.httpApi.apiEndpoint });
     }
