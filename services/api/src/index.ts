@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { handleTokenPost, handleTokenPageGet, handleTokenServicePageGet } from './handlers/token';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -19,53 +20,20 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     return `${y}-${m}-${day}`;
   }
 
+  // Service-specific token page: GET /b/{businessId}/token/{serviceId}
+  const tokenSvc = path.match(/^\/b\/([^/]+)\/token\/([^/]+)$/);
+  if (tokenSvc && method === 'GET') {
+    const businessId = decodeURIComponent(tokenSvc[1]);
+    const serviceId = decodeURIComponent(tokenSvc[2]);
+    return handleTokenServicePageGet(businessId, serviceId);
+  }
+
   // Public: simple token issue for a specific business
   const tokenBiz = path.match(/^\/b\/([^/]+)\/token$/);
   if (tokenBiz && method === 'POST') {
     try {
       const businessId = decodeURIComponent(tokenBiz[1]);
-      const now = new Date();
-      const dayKey = todayStr();
-      const pkDay = `BIZ#${businessId}`;
-      const skDay = `DAY#${dayKey}`;
-      const tableName = process.env.TABLE_NAME as string;
-      if (!tableName) return json(500, { message: 'TABLE_NAME not configured' });
-
-      // Atomically increment per-day counter
-      const up = await ddb.send(new UpdateCommand({
-        TableName: tableName,
-        Key: { PK: pkDay, SK: skDay },
-        UpdateExpression: 'SET nextNumber = if_not_exists(nextNumber, :zero) + :one, updatedAt = :now',
-        ExpressionAttributeValues: { ':zero': 0, ':one': 1, ':now': now.toISOString() },
-        ReturnValues: 'UPDATED_NEW'
-      }));
-      const ticketNo = (up.Attributes?.nextNumber as number) || 1;
-
-      // Persist ticket entry for the day
-      const pkTickets = `BIZ#${businessId}#DAY#${dayKey}`;
-      const ticketId = `t_${businessId}_${dayKey}_${ticketNo}`;
-      const skTicket = `TKT#${String(ticketNo).padStart(4, '0')}`;
-      const item = {
-        PK: pkTickets,
-        SK: skTicket,
-        ticketId,
-        ticketNo,
-        businessId,
-        day: dayKey,
-        service: 'general',
-        name: 'guest',
-        status: 'pending',
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString()
-      };
-
-      await ddb.send(new PutCommand({
-        TableName: tableName,
-        Item: item,
-        ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)'
-      }));
-
-      return json(201, { ticketNo, ticketId, status: 'pending' });
+      return await handleTokenPost(businessId, event.body ?? null, new Date());
     } catch (err: any) {
       return json(500, { message: 'failed to issue token', error: err?.message || String(err) });
     }
@@ -73,55 +41,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
   // Simple HTML page that auto-requests a token and shows it large
   if (tokenBiz && method === 'GET') {
-    const htmlBody = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Get Token</title>
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; background: #0b1020; color: #fff; }
-      .card { text-align: center; padding: 2rem 3rem; background: #121836; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
-      h1 { margin: 0 0 1rem; font-size: 1.5rem; font-weight: 600; color: #9fb4ff; }
-      .token { font-size: 20vw; line-height: 1; font-weight: 800; letter-spacing: 0.05em; color: #e6ecff; text-shadow: 0 4px 20px rgba(80,120,255,0.35); }
-      .err { color: #ff8892; font-size: 1rem; margin-top: 1rem; }
-      .small { opacity: 0.7; margin-top: 1rem; font-size: 0.9rem; }
-      @media (min-width: 640px) { .token { font-size: 10rem; } }
-      button { margin-top: 1.5rem; padding: .75rem 1rem; font-weight: 600; border-radius: 10px; border: 1px solid #32408f; background: #1a2352; color: #e6ecff; cursor: pointer; }
-      button:hover { filter: brightness(1.1); }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Your token number</h1>
-      <div id="token" class="token">…</div>
-      <div id="error" class="err" hidden></div>
-      <div class="small">This page asks the server for a new token on load. Use the button for another.</div>
-      <button id="again">Get another token</button>
-    </div>
-    <script>
-      async function getToken() {
-        const $t = document.getElementById('token');
-        const $e = document.getElementById('error');
-        $e.hidden = true; $e.textContent = '';
-        $t.textContent = '…';
-        try {
-          const res = await fetch(window.location.pathname, { method: 'POST' });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data && data.message || 'Request failed');
-          const n = (data && (data.ticketNo || data.number || data.token)) || '—';
-          $t.textContent = n;
-        } catch (err) {
-          $t.textContent = '—';
-          $e.hidden = false; $e.textContent = 'Error: ' + (err && err.message || err);
-        }
-      }
-      document.getElementById('again').addEventListener('click', getToken);
-      getToken();
-    </script>
-  </body>
-</html>`;
-    return html(200, htmlBody);
+    return handleTokenPageGet();
   }
 
   // Public: enqueue for a specific business
@@ -188,12 +108,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (!tableName) return json(500, { message: 'TABLE_NAME not configured' });
       const dayKey = todayStr();
       const pkTickets = `BIZ#${businessId}#DAY#${dayKey}`;
+      const serviceId = (event.queryStringParameters?.serviceId || '').toString().trim();
 
       const q = await ddb.send(new QueryCommand({
         TableName: tableName,
         KeyConditionExpression: 'PK = :pk AND begins_with(SK, :tkt)',
-        ExpressionAttributeValues: { ':pk': pkTickets, ':tkt': 'TKT#', ':pending': 'pending' },
-        FilterExpression: '#s = :pending',
+        ExpressionAttributeValues: serviceId
+          ? { ':pk': pkTickets, ':tkt': 'TKT#', ':pending': 'pending', ':svc': serviceId }
+          : { ':pk': pkTickets, ':tkt': 'TKT#', ':pending': 'pending' },
+        FilterExpression: serviceId ? '#s = :pending AND serviceId = :svc' : '#s = :pending',
         ExpressionAttributeNames: { '#s': 'status' },
         Limit: 1
       }));
@@ -210,7 +133,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         ConditionExpression: '#s = :pending'
       }));
 
-      return json(200, { ticketNo: item.ticketNo, status: 'serving' });
+      return json(200, { ticketNo: item.ticketNo, status: 'serving', serviceId: (item as any).serviceId });
     } catch (err: any) {
       return json(500, { message: 'failed to get next', error: err?.message || String(err) });
     }
@@ -228,7 +151,16 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (!tableName) return json(500, { message: 'TABLE_NAME not configured' });
       const body = event.body ? JSON.parse(event.body) : {};
       const name = (body.name || '').toString().trim() || 'My Business';
-      const services = Array.isArray(body.services) ? body.services : ['general'];
+      const industry = (body.industry || '').toString().trim() || 'general';
+      const workersPerDay = Number(body.workersPerDay || 1) || 1;
+      const tokenMode = (body.tokenMode || 'perService').toString();
+      // services: array of objects or strings
+      const servicesInput = Array.isArray(body.services) ? body.services : [];
+      const services = servicesInput.map((s: any, i: number) => {
+        if (typeof s === 'string') return { id: s, name: s, enabled: true };
+        const id = (s.id || s.name || `svc_${i}`).toString();
+        return { id, name: (s.name || id).toString(), enabled: s.enabled ?? true };
+      });
       const avgMinutes = (body.avgMinutes || {}) as Record<string, number>;
 
       const businessId = `b_${Math.random().toString(36).slice(2, 10)}`;
@@ -238,8 +170,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         SK: 'PROFILE',
         businessId,
         name,
+        industry,
         services,
         avgMinutes,
+        workersPerDay,
+        tokenMode,
         status: 'open',
         createdAt: new Date().toISOString(),
         createdBy: sub || 'unknown'
@@ -251,9 +186,56 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)'
       }));
 
-      return json(201, { businessId, name, services, status: 'open' });
+      return json(201, { businessId, name, industry, services, workersPerDay, tokenMode, status: 'open' });
     } catch (err: any) {
       return json(500, { message: 'failed to create business', error: err?.message || String(err) });
+    }
+  }
+
+  // Update business profile (staff)
+  const updateBizMatch = path.match(/^\/staff\/([^/]+)\/business$/);
+  if (method === 'PUT' && updateBizMatch) {
+    try {
+      const businessId = decodeURIComponent(updateBizMatch[1]);
+      const tableName = process.env.TABLE_NAME as string;
+      if (!tableName) return json(500, { message: 'TABLE_NAME not configured' });
+      const pk = `BIZ#${businessId}`;
+      const body = event.body ? JSON.parse(event.body) : {};
+
+      const sets: string[] = [];
+      const names: Record<string, string> = {};
+      const values: Record<string, any> = {};
+
+      function addSet(field: string, value: any) {
+        const nameKey = `#${field}`;
+        const valueKey = `:${field}`;
+        names[nameKey] = field;
+        values[valueKey] = value;
+        sets.push(`${nameKey} = ${valueKey}`);
+      }
+
+      if (body.name != null) addSet('name', String(body.name));
+      if (body.industry != null) addSet('industry', String(body.industry));
+      if (body.workersPerDay != null) addSet('workersPerDay', Number(body.workersPerDay));
+      if (body.tokenMode != null) addSet('tokenMode', String(body.tokenMode));
+      if (body.services != null) addSet('services', body.services);
+      if (body.avgMinutes != null) addSet('avgMinutes', body.avgMinutes);
+      addSet('updatedAt', new Date().toISOString());
+
+      if (!sets.length) return json(400, { message: 'no fields to update' });
+
+      await ddb.send(new UpdateCommand({
+        TableName: tableName,
+        Key: { PK: pk, SK: 'PROFILE' },
+        UpdateExpression: `SET ${sets.join(', ')}`,
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+        ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)'
+      }));
+
+      return json(200, { businessId, updated: true });
+    } catch (err: any) {
+      return json(500, { message: 'failed to update business', error: err?.message || String(err) });
     }
   }
 
