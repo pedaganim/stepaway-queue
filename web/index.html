@@ -45,6 +45,16 @@
       <p class="muted">Health check: <span id="health">checking...</span></p>
     </div>
 
+    <div class="card" style="margin-top: 1rem;">
+      <h2>Staff</h2>
+      <p class="muted">If you are a staff member, you can sign in to manage your queue and create a business profile.</p>
+      <div class="row">
+        <a id="staffLink" href="./staff.html"><button>Staff Login</button></a>
+        <a id="createBizLink" href="./staff.html"><button>Create a Business</button></a>
+      </div>
+      <p class="muted">Tip: the staff console will use the API base URL if you configured it here.</p>
+    </div>
+
     <script>
       const API_BASE = localStorage.getItem('STEP_API') || new URLSearchParams(location.search).get('api') || '';
       const BIZ_ID = localStorage.getItem('STEP_BIZ') || new URLSearchParams(location.search).get('biz') || '';
@@ -55,6 +65,19 @@
         const bizFromQuery = qs.get('biz');
         if (apiFromQuery) localStorage.setItem('STEP_API', apiFromQuery);
         if (bizFromQuery) localStorage.setItem('STEP_BIZ', bizFromQuery);
+      })();
+      // Build staff links carrying API base if known
+      (function buildStaffLinks(){
+        const staff = document.getElementById('staffLink');
+        const create = document.getElementById('createBizLink');
+        function withApi(url){
+          if (!API_BASE) return url;
+          const u = new URL(url, location.href);
+          u.searchParams.set('api', API_BASE);
+          return u.toString();
+        }
+        if (staff) staff.href = withApi('./staff.html');
+        if (create) create.href = withApi('./staff.html');
       })();
       async function api(path, init) {
         if (!API_BASE) return { error: 'No API URL configured. Append ?api=https://your-api.execute-api.* to the URL.' };
